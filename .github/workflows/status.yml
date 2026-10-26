@@ -1,0 +1,59 @@
+name: status-check
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - status_manual.txt
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: feed-commit
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check
+        env:
+          FEED_UA: ${{ vars.FEED_UA }}
+        run: python status.py
+      - name: Alert by email (GitHub issue)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALERT_USER: ${{ vars.ALERT_USER }}
+        run: |
+          python - <<'PY'
+          import json, os, subprocess
+          alerts = json.load(open("out/alerts.json"))
+          open_issues = json.loads(subprocess.run(["gh", "issue", "list", "--label", "status-alert", "--state", "open", "--json", "number,title"], capture_output=True, text=True).stdout or "[]")
+          subprocess.run(["gh", "label", "create", "status-alert", "--color", "D93F0B", "--force"], capture_output=True)
+          ids = {a["id"] for a in alerts}
+          for a in alerts:
+              title = "[VRChat incident] %s (%s)" % (a["name"], a["id"])
+              if any(i["title"] == title for i in open_issues): continue
+              who = ("@" + os.environ["ALERT_USER"] + " ") if os.environ.get("ALERT_USER") else ""
+              body = "%sVRChat status page reports an incident.\n\n- %s\n- video related: %s\n- %s\n\nWorlds with Mirai Cinema now show a notice. Edit status_manual.txt to add your own message." % (who, a["name"], a["video"], a["url"])
+              subprocess.run(["gh", "issue", "create", "--title", title, "--body", body, "--label", "status-alert"])
+          for i in open_issues:
+              if not any(x in i["title"] for x in ids):
+                  subprocess.run(["gh", "issue", "close", str(i["number"]), "--comment", "Resolved on the VRChat status page."])
+          PY
+      - name: Publish
+        run: |
+          mkdir -p feed
+          cp out/status.txt feed/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add feed/status.txt
+          git diff --cached --quiet && exit 0
+          git commit -m "status update"
+          git pull --rebase
+          git push
