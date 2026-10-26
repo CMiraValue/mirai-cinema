@@ -1,0 +1,6 @@
+# Mirai Cinema / C.MiraiItem status (edit this file to show a message in every world)
+# msg|<cinema or all>|<level 1=notice 2=problem>|ja|en|ko|zh
+# flag|cinema.unity_first|1   -> start with the Unity player instead of AVPro
+# flag|cinema.timeout|40      -> wait longer before retrying
+flag|cinema.unity_first|0
+flag|cinema.timeout|25
